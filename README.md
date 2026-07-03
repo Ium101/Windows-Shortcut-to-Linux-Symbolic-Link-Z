@@ -5,8 +5,6 @@
 **Converts Windows `.lnk` shortcut files into Linux symbolic links**  
 Clean dark PyQt6 GUI · Bilingual EN/PT-BR · CLI fallback · Dry-run mode
 
-![Main window — Convert tab](docs/screenshot_convert.png)
-
 </div>
 
 ---
