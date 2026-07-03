@@ -46,9 +46,9 @@ GTK3 bindings are **not** required; the GUI is pure PyQt6.
 
 ---
 
-## Quick start
+## Quick Start
 
-### Run without installing
+### Run without Installing
 
 ```bash
 python3 lnk2symlink.py
@@ -57,7 +57,7 @@ python3 lnk2symlink.py
 Dependencies (`PyQt6`, `pylnk3`) are fetched automatically on the first run if
 they are not already present.
 
-### Build & install (system-wide)
+### Build & Install (system-wide)
 
 ```bash
 chmod +x build.sh && ./build.sh
@@ -86,7 +86,7 @@ Python source is syntactically valid before declaring success.
 
 ---
 
-## CLI usage
+## CLI Usage
 
 ```
 python3 lnk2symlink.py --no-gui [DIR]
@@ -99,7 +99,7 @@ python3 lnk2symlink.py --no-gui [DIR]
 
 ---
 
-## Settings file
+## Settings File
 
 Settings are saved next to the script as `lnk2symlnk_config_linux.ini`
 (or `_windows.ini` on Windows), so the program is fully portable — move
@@ -122,7 +122,7 @@ automatically and migrated to `.ini` on the next save.
 
 ---
 
-## Project layout
+## Project Layout
 
 ```
 lnk2symlink.py              Main script (GUI + CLI in one file)
