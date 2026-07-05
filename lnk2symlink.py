@@ -1252,6 +1252,7 @@ def run_gui():
             # Use kdialog --getopenfilename for a full KFileWidget with thumbnails/icon view
             start_uri = Path(start).as_uri() if Path(start).exists() else Path.home().as_uri()
             chosen = None
+            kdialog_ran = False   # True once we successfully launched any kdialog binary
             for kdialog_bin in ("kdialog", "kdialog6"):
                 try:
                     _set_kfilewidget_icon_view()
@@ -1260,6 +1261,7 @@ def run_gui():
                          "--getopenfilename", start_uri, "*.lnk"],
                         capture_output=True, text=True, timeout=300
                     )
+                    kdialog_ran = True
                     if result.returncode == 0:
                         raw = result.stdout.strip()
                         if raw.startswith("file://"):
@@ -1267,13 +1269,16 @@ def run_gui():
                             raw = unquote(raw[7:])
                         if raw and Path(raw).is_file():
                             chosen = raw
+                    # rc=0 with a valid path → chosen is set above
+                    # rc=1 → user cancelled — stop here, do NOT open a second dialog
+                    # Either way, kdialog ran successfully so we are done with the picker.
                     break
                 except FileNotFoundError:
-                    continue
+                    continue   # this binary doesn't exist, try the next one
                 except subprocess.TimeoutExpired:
-                    return
-            if chosen is None:
-                # Fallback: Qt native file dialog
+                    return     # dialog timed out — treat as cancel
+            if not kdialog_ran:
+                # kdialog is not installed at all — fall back to Qt's built-in dialog
                 path, _ = QFileDialog.getOpenFileName(
                     self, T("browse_file"), start, "Windows Shortcuts (*.lnk);;All files (*)")
                 if path:
