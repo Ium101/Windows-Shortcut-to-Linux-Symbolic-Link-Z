@@ -6,10 +6,27 @@ CLI: pass --no-gui
 Made by Ium101
 """
 
-import os, sys, re, json, argparse, subprocess, configparser
+import os, sys, re, json, argparse, subprocess, configparser, codecs
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
+
+# ── Codec shim: 'ansi' is a valid alias on Windows but unknown on Linux ────
+# pylnk3's IconEnvironmentDataBlock (ExtraData) calls .decode('ansi') for the
+# 260-byte ANSI target path inside shortcuts that have an icon environment
+# block — e.g. shortcuts whose target lives under a %USERPROFILE% or
+# %SystemRoot% path.  On Linux that codec name doesn't exist and raises
+# LookupError, crashing parse() for *any* .lnk that carries this extra block,
+# even though the actual path is also stored in a UTF-16 field and is read
+# correctly.  We register 'ansi' → cp1252 (Windows Western European, the true
+# meaning of "ANSI" on most Windows installs) once, before pylnk3 is loaded,
+# so the decode never fails.  cp1252 is already registered on every platform.
+def _register_ansi_codec():
+    try:
+        codecs.lookup("ansi")          # already present (e.g. running on Windows)
+    except LookupError:
+        codecs.register(lambda name: codecs.lookup("cp1252") if name == "ansi" else None)
+_register_ansi_codec()
 
 # ── Dependency bootstrap ───────────────────────────────────────
 def _pip(*pkgs, extra=[]):
@@ -41,7 +58,7 @@ _S = {
     lang_toggle="PT-BR",        # label shown when current lang is EN (click to switch to PT)
     theme_dark="☀  Light",     # button label shown while in dark mode (click → go light)
     theme_light="🌙  Dark",    # button label shown while in light mode (click → go dark)
-    folder_label="Folder to scan:", browse="Browse Folder…", browse_file="Browse File…",
+    folder_label="Folder to scan:", browse="Browse Folder…", browse_file="Browse File…", scan="Scan",
     drives_title="Drive mapping",
     drives_hint="Map each Windows drive letter to its Linux mount point:",
     mount_ph="Mount point for {l}:", browse_mount="Browse…",
@@ -67,7 +84,7 @@ _S = {
     lang_toggle="EN-US",        # label shown when current lang is PT (click to switch to EN)
     theme_dark="☀  Claro",     # button label shown while in dark mode
     theme_light="🌙  Escuro",  # button label shown while in light mode
-    folder_label="Pasta para escanear:", browse="Escolher Pasta…", browse_file="Escolher Arquivo…",
+    folder_label="Pasta para escanear:", browse="Escolher Pasta…", browse_file="Escolher Arquivo…", scan="Escanear",
     drives_title="Mapeamento de drives",
     drives_hint="Mapeie cada letra de drive Windows para seu ponto de montagem Linux:",
     mount_ph="Ponto de montagem para {l}:", browse_mount="Escolher…",
@@ -861,7 +878,7 @@ def run_gui():
             LOG_BG= QColor("#ffffff")
         GREEN      = QColor("#a6e3a1") if dark else QColor("#1f9d55")
         RED        = QColor("#f38ba8") if dark else QColor("#d1383d")
-        YEL        = QColor("#f9e2af") if dark else QColor("#b8860b")
+        YEL        = QColor("#cc6a00")
         PURPLE     = QColor("#cba6f7") if dark else QColor("#7c3aed")
         ACCENT_TEXT= BG               if dark else QColor("#ffffff")
         return BG, BG2, BG3, ACCENT, FG, FG2, LOG_BG, GREEN, RED, YEL, PURPLE, ACCENT_TEXT
@@ -904,7 +921,7 @@ def run_gui():
         background: {BG3.name()}; color: {FG.name()}; border: none;
         border-radius: 5px; padding: 6px 14px; font-size: 10pt;
     }}
-    QPushButton:hover {{ background: {ACCENT.lighter(130).name() if dark else BG3.darker(110).name()}; }}
+    QPushButton:hover {{ background: {BG3.lighter(120).name() if dark else BG3.darker(110).name()}; }}
     QPushButton:pressed {{ background: {ACCENT.name()}; color: {ACCENT_TEXT.name()}; }}
     QPushButton#accent {{
         background: {ACCENT.name()}; color: {ACCENT_TEXT.name()}; font-weight: bold;
@@ -1116,7 +1133,13 @@ def run_gui():
             fl.addWidget(self.lbl_folder)
             self.entry_folder = QLineEdit()
             self.entry_folder.setPlaceholderText("/home/user/myfolder")
+            self.entry_folder.returnPressed.connect(self._do_scan)
             fl.addWidget(self.entry_folder, 1)
+            self.btn_scan = QPushButton(T("scan"))
+            self.btn_scan.setObjectName("accent")
+            self.btn_scan.setToolTip("Scan the path typed above")
+            self.btn_scan.clicked.connect(self._do_scan)
+            fl.addWidget(self.btn_scan)
             self.btn_browse = QPushButton(T("browse"))
             self.btn_browse.clicked.connect(self._browse_folder)
             fl.addWidget(self.btn_browse)
@@ -1211,6 +1234,7 @@ def run_gui():
             self.setWindowTitle(T("title"))
             self.lbl_credit.setText(T("credit"))
             self.lbl_folder.setText(T("folder_label"))
+            self.btn_scan.setText(T("scan"))
             self.btn_browse.setText(T("browse"))
             self.btn_browse_file.setText(T("browse_file"))
             self.btn_convert.setText(T("convert"))
@@ -1344,13 +1368,14 @@ def run_gui():
 
         # ── Scan ──────────────────────────────────────────────
         def _save_current_config(self):
-            drive_map = {}
+            # Merge live combo values into the accumulated map — never replace it
+            # wholesale, so letters from earlier scans are kept across re-scans.
             for letter, combo in self.drive_rows.items():
                 val = combo.lineEdit().text().strip()
                 if val:
-                    drive_map[letter] = val
+                    self._saved_drive_map[letter] = val
             self._config["last_folder"] = self.entry_folder.text().strip()
-            self._config["drive_map"]   = drive_map
+            self._config["drive_map"]   = dict(self._saved_drive_map)
             self._config["lang"]        = _LANG
             self._config["recursive"]   = self.chk_recursive.isChecked()
             save_config(self._config)
@@ -1385,6 +1410,12 @@ def run_gui():
                 self._add_tree_row(e)
 
             letters = sorted({e.drive_letter for e in self.entries if not e.error and e.drive_letter})
+            # Merge whatever the user currently has typed into the accumulated map
+            # before rebuilding, so re-scanning never clobbers live or prior values.
+            for letter, combo in self.drive_rows.items():
+                val = combo.lineEdit().text().strip()
+                if val:
+                    self._saved_drive_map[letter] = val
             self._rebuild_drive_rows(letters)
 
             if not self.entries:
@@ -1436,6 +1467,7 @@ def run_gui():
             self.tree.clear()
             self.log_box.clear()
             self.btn_convert.setEnabled(False)
+            self.btn_scan.setEnabled(False)
             self.btn_browse.setEnabled(False)
             self.btn_browse_file.setEnabled(False)
 
@@ -1476,6 +1508,7 @@ def run_gui():
 
         def _on_done(self, c, s, e, dry):
             self.btn_convert.setEnabled(True)
+            self.btn_scan.setEnabled(True)
             self.btn_browse.setEnabled(True)
             self.btn_browse_file.setEnabled(True)
             key = "done_dry" if dry else "done"
