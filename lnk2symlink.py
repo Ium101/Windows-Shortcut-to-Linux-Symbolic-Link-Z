@@ -142,7 +142,9 @@ def load_config() -> dict:
             if cp.has_option(_INI_MAIN, "dark_mode"):
                 result["dark_mode"] = cp.getboolean(_INI_MAIN, "dark_mode")
             if cp.has_section(_INI_DRIVES):
-                result["drive_map"] = dict(cp.items(_INI_DRIVES))
+                # configparser lowercases all keys; drive letters must be
+                # uppercase to match e.drive_letter (always .upper() at parse time).
+                result["drive_map"] = {k.upper(): v for k, v in cp.items(_INI_DRIVES)}
             return result
         except Exception:
             pass
@@ -1370,10 +1372,11 @@ def run_gui():
         def _save_current_config(self):
             # Merge live combo values into the accumulated map — never replace it
             # wholesale, so letters from earlier scans are kept across re-scans.
+            # Keys are always uppercase to match e.drive_letter.
             for letter, combo in self.drive_rows.items():
                 val = combo.lineEdit().text().strip()
                 if val:
-                    self._saved_drive_map[letter] = val
+                    self._saved_drive_map[letter.upper()] = val
             self._config["last_folder"] = self.entry_folder.text().strip()
             self._config["drive_map"]   = dict(self._saved_drive_map)
             self._config["lang"]        = _LANG
@@ -1412,10 +1415,11 @@ def run_gui():
             letters = sorted({e.drive_letter for e in self.entries if not e.error and e.drive_letter})
             # Merge whatever the user currently has typed into the accumulated map
             # before rebuilding, so re-scanning never clobbers live or prior values.
+            # Keys are always uppercase to match e.drive_letter.
             for letter, combo in self.drive_rows.items():
                 val = combo.lineEdit().text().strip()
                 if val:
-                    self._saved_drive_map[letter] = val
+                    self._saved_drive_map[letter.upper()] = val
             self._rebuild_drive_rows(letters)
 
             if not self.entries:
