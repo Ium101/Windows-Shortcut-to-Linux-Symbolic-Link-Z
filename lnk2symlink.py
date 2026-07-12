@@ -78,6 +78,8 @@ _S = {
     log_ok="✓  {lnk}  →  {tgt}",
     log_skip="–  {f} ({r})", log_err="✗  {f}: {r}",
     log_dry="[DRY RUN] Would create: {lnk}  →  {tgt}",
+    select_all="Select All", deselect_all="Deselect All",
+    col_sel="✓",
 ),
 "pt": dict(
     title="Windows Shortcut to Linux Symbolic Link Z", credit="Feito por Ium101",
@@ -104,6 +106,8 @@ _S = {
     log_ok="✓  {lnk}  →  {tgt}",
     log_skip="–  {f} ({r})", log_err="✗  {f}: {r}",
     log_dry="[SIMULAÇÃO] Criaria: {lnk}  →  {tgt}",
+    select_all="Selecionar Todos", deselect_all="Desmarcar Todos",
+    col_sel="✓",
 ),
 }
 _LANG = "en"
@@ -268,13 +272,25 @@ def _candidate_raw_paths(lnk) -> list:
     instead of giving up after the first non-matching one — this is the
     main reason some shortcuts used to convert fine while others (made by
     a different Windows version/app, or pointing at a special folder) were
-    silently skipped as 'bad format'."""
+    silently skipped as 'bad format'.
+
+    Priority order rationale:
+      1. link_info.local_base_path / common_path_suffix  — this is the field
+         Windows Explorer actually uses to resolve a local shortcut, and it is
+         the field that drive-letter-changer tools reliably update.
+      2. lnk.path — pylnk3's composite property that *prefers* the shell item
+         ID list (get_path()) over link_info when an ID list is present.  The
+         ID list encodes the drive letter in its binary shell items and is NOT
+         updated by most drive-letter-changer utilities, so after a letter
+         change it still carries the old letter.  Putting this second means we
+         only fall back here when link_info is absent.
+      3. shell_item_id_list.get_path() directly — same source as (2), tried
+         separately to catch shortcuts that lack link_info entirely.
+      4. string_data fields — last resort for relative or working-dir hints.
+    """
     candidates = []
 
-    path_attr = getattr(lnk, "path", None)
-    if path_attr:
-        candidates.append(path_attr)
-
+    # ── 1. LinkInfo (most authoritative; updated by drive-letter changers) ──
     link_info = getattr(lnk, "link_info", None)
     if link_info is not None:
         for attr in ("local_base_path", "common_path_suffix"):
@@ -282,9 +298,14 @@ def _candidate_raw_paths(lnk) -> list:
             if val:
                 candidates.append(val)
 
-    # idlist / shell_item_id_list path reconstruction (covers KNOWN_FOLDER
-    # and other "%ROOT%\..." forms) — pylnk3 names this attribute
-    # differently across versions, so try a few.
+    # ── 2. pylnk3 composite path (prefers ID list — may be stale after a
+    #       drive-letter change, so we try it only after link_info) ──────────
+    path_attr = getattr(lnk, "path", None)
+    if path_attr:
+        candidates.append(path_attr)
+
+    # ── 3. Shell item ID list directly (covers KNOWN_FOLDER / %ROOT% forms,
+    #       and shortcuts that have no link_info at all) ─────────────────────
     for idlist_attr in ("shell_item_id_list", "id_list", "_shell_item_id_list"):
         idlist = getattr(lnk, idlist_attr, None)
         if idlist is not None and hasattr(idlist, "get_path"):
@@ -295,6 +316,7 @@ def _candidate_raw_paths(lnk) -> list:
             except Exception:
                 pass
 
+    # ── 4. StringData fields (relative path, working dir — last resort) ─────
     string_data = getattr(lnk, "string_data", None)
     if string_data is not None:
         for attr in ("relative_path", "working_dir", "command_line_arguments"):
@@ -1155,20 +1177,34 @@ def run_gui():
             self.chk_recursive.setChecked(self._config.get("recursive", True))
             vl.addWidget(self.chk_recursive)
 
-            # Tree — 5 columns: Shortcut / Path / Windows Target / Drive / Status
+            # Tree — 6 columns: ✓ / Shortcut / Path / Windows Target / Drive / Status
             self.tree = QTreeWidget()
             self.tree.setAlternatingRowColors(True)
             self.tree.setRootIsDecorated(False)
             self.tree.setSortingEnabled(True)
-            self.tree.setColumnCount(5)
+            self.tree.setColumnCount(6)
             self._refresh_tree_headers()
-            self.tree.setColumnWidth(0, 190)   # Shortcut filename
-            self.tree.setColumnWidth(1, 160)   # Path (relative to scan root)
-            self.tree.setColumnWidth(2, 190)   # Windows Target
-            self.tree.setColumnWidth(3,  50)   # Drive
-            self.tree.setColumnWidth(4,  90)   # Status
-            self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+            self.tree.setColumnWidth(0,  32)   # Checkbox
+            self.tree.setColumnWidth(1, 190)   # Shortcut filename
+            self.tree.setColumnWidth(2, 150)   # Path (relative to scan root)
+            self.tree.setColumnWidth(3, 190)   # Windows Target
+            self.tree.setColumnWidth(4,  50)   # Drive
+            self.tree.setColumnWidth(5,  90)   # Status
+            self.tree.sortByColumn(1, Qt.SortOrder.AscendingOrder)
+            # Clicking any cell in a row toggles its checkbox
+            self.tree.itemClicked.connect(self._on_tree_item_clicked)
             vl.addWidget(self.tree, 1)
+
+            # Select / Deselect all row
+            sel_row = QHBoxLayout()
+            self.btn_select_all = QPushButton(T("select_all"))
+            self.btn_select_all.clicked.connect(self._select_all)
+            self.btn_deselect_all = QPushButton(T("deselect_all"))
+            self.btn_deselect_all.clicked.connect(self._deselect_all)
+            sel_row.addWidget(self.btn_select_all)
+            sel_row.addWidget(self.btn_deselect_all)
+            sel_row.addStretch()
+            vl.addLayout(sel_row)
 
             # Drive mapping group
             self.grp_drives = QGroupBox(T("drives_title"))
@@ -1252,13 +1288,15 @@ def run_gui():
             self.btn_lang.setText(T("lang_toggle"))
             dark = _dark_mode_state[0]
             self.btn_theme.setText(T("theme_dark" if dark else "theme_light"))
+            self.btn_select_all.setText(T("select_all"))
+            self.btn_deselect_all.setText(T("deselect_all"))
             # Retranslate drive row labels
             letters = sorted(self.drive_rows.keys())
             self._rebuild_drive_rows(letters)
 
         def _refresh_tree_headers(self):
             self.tree.setHeaderLabels([
-                T("col_file"), T("col_path"), T("col_target"),
+                T("col_sel"), T("col_file"), T("col_path"), T("col_target"),
                 T("col_drive"), T("col_status")])
 
         # ── Folder browse — native Dolphin thumbnail picker ──────
@@ -1442,17 +1480,41 @@ def run_gui():
 
             stat = e.error or "—"
             item = QTreeWidgetItem([
+                "",                      # col 0: checkbox (managed via CheckState)
                 e.lnk_path.name,
                 rel,
                 e.windows_path,
                 e.drive_letter or "?",
                 stat
             ])
+            # Checkbox in column 0 — checked by default, unchecked for error entries
+            check_state = Qt.CheckState.Unchecked if e.error else Qt.CheckState.Checked
+            item.setCheckState(0, check_state)
             if e.error:
                 _RED = _C()[8]
-                for c in range(5): item.setForeground(c, _RED)
+                for c in range(6): item.setForeground(c, _RED)
             self.tree.addTopLevelItem(item)
             return item
+
+        def _on_tree_item_clicked(self, item: "QTreeWidgetItem", column: int):
+            """Clicking any column toggles the row's checkbox."""
+            if column == 0:
+                return   # column 0 is the checkbox itself — Qt handles it natively
+            current = item.checkState(0)
+            item.setCheckState(
+                0,
+                Qt.CheckState.Unchecked
+                if current == Qt.CheckState.Checked
+                else Qt.CheckState.Checked
+            )
+
+        def _select_all(self):
+            for i in range(self.tree.topLevelItemCount()):
+                self.tree.topLevelItem(i).setCheckState(0, Qt.CheckState.Checked)
+
+        def _deselect_all(self):
+            for i in range(self.tree.topLevelItemCount()):
+                self.tree.topLevelItem(i).setCheckState(0, Qt.CheckState.Unchecked)
 
         # ── Convert ───────────────────────────────────────────
         def _do_convert(self):
@@ -1467,6 +1529,18 @@ def run_gui():
 
             self._save_current_config()   # remember drive mappings for next launch
 
+            # Build a set of checked lnk paths so we only convert selected rows
+            checked_paths = set()
+            for i in range(self.tree.topLevelItemCount()):
+                it = self.tree.topLevelItem(i)
+                if it.checkState(0) == Qt.CheckState.Checked:
+                    # Column 1 holds the filename; match against entry lnk_path.name
+                    checked_paths.add(it.text(1))
+
+            selected_entries = [e for e in self.entries if e.lnk_path.name in checked_paths]
+            if not selected_entries:
+                QMessageBox.warning(self, T("title"), T("no_lnk")); return
+
             dry = self.chk_dry.isChecked()
             self.tree.clear()
             self.log_box.clear()
@@ -1475,7 +1549,7 @@ def run_gui():
             self.btn_browse.setEnabled(False)
             self.btn_browse_file.setEnabled(False)
 
-            self.worker = Worker(self.entries, drive_map, dry)
+            self.worker = Worker(selected_entries, drive_map, dry)
             self.worker.row_ready.connect(self._on_row_ready)
             self.worker.log_line.connect(self._on_log_line)
             self.worker.finished_ok.connect(lambda c,s,e: self._on_done(c,s,e,dry))
@@ -1492,16 +1566,18 @@ def run_gui():
 
             stat = e.status
             item = QTreeWidgetItem([
+                "",
                 e.lnk_path.name,
                 rel,
                 e.windows_path,
                 e.drive_letter or "?",
                 stat
             ])
+            item.setCheckState(0, Qt.CheckState.Checked)
             _BG, _BG2, _BG3, _ACCENT, _FG, _FG2, _LOG_BG, _GREEN, _RED, _YEL, _PURPLE, _ = _C()
             colors = {"created": _GREEN.name(), "skipped": _YEL.name(), "error": _RED.name()}
             col = QColor(colors.get(stat, _FG.name()))
-            for c in range(5): item.setForeground(c, col)
+            for c in range(6): item.setForeground(c, col)
             self.tree.addTopLevelItem(item)
 
         def _on_log_line(self, text, tag):
