@@ -266,6 +266,26 @@ def _root_token_to_drive_path(raw: str) -> Optional[str]:
     return candidate
 
 
+def _fix_ansi_encoding(s: str) -> str:
+    """pylnk3 decodes the ANSI LocalBasePath field using CP1251 (Cyrillic)
+    instead of CP1252 (Windows Western European / Latin), which corrupts
+    accented characters like í → н for any shortcut created on a Western
+    European / Portuguese Windows install.
+
+    Fix: re-encode the already-decoded string back to CP1251 bytes (round-
+    trip is lossless for any character pylnk3 could have produced that way),
+    then re-decode as CP1252, which is the correct code page for most
+    non-CJK Windows installations outside Russia/Eastern Europe.
+
+    If either step fails the original string is returned unchanged so we
+    never make things worse.
+    """
+    try:
+        return s.encode("cp1251").decode("cp1252")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
+
+
 def _candidate_raw_paths(lnk) -> list:
     """Collect every plausible target-path string pylnk3 exposes, in the
     order we trust them. Earlier failures fall through to later candidates
@@ -275,34 +295,35 @@ def _candidate_raw_paths(lnk) -> list:
     silently skipped as 'bad format'.
 
     Priority order rationale:
-      1. link_info.local_base_path / common_path_suffix  — this is the field
-         Windows Explorer actually uses to resolve a local shortcut, and it is
-         the field that drive-letter-changer tools reliably update.
-      2. lnk.path — pylnk3's composite property that *prefers* the shell item
-         ID list (get_path()) over link_info when an ID list is present.  The
-         ID list encodes the drive letter in its binary shell items and is NOT
-         updated by most drive-letter-changer utilities, so after a letter
-         change it still carries the old letter.  Putting this second means we
-         only fall back here when link_info is absent.
-      3. shell_item_id_list.get_path() directly — same source as (2), tried
-         separately to catch shortcuts that lack link_info entirely.
+      1. lnk.path — pylnk3's composite property sourced from the Unicode
+         shell item ID list (get_path()).  This is always UTF-16 in the file
+         and therefore never suffers the CP1251 vs CP1252 mis-decode that
+         plagues the ANSI LinkInfo fields.  It *may* be stale after a
+         drive-letter-changer tool updates only link_info, so we also try
+         link_info below and keep whichever resolves first.
+      2. link_info.local_base_path / common_path_suffix — the ANSI field
+         Windows Explorer uses to resolve local shortcuts; updated by most
+         drive-letter-changer tools.  We apply _fix_ansi_encoding() to
+         correct the CP1251→CP1252 mis-decode before using it.
+      3. shell_item_id_list.get_path() directly — covers KNOWN_FOLDER /
+         %ROOT% forms and shortcuts that have no link_info at all.
       4. string_data fields — last resort for relative or working-dir hints.
     """
     candidates = []
 
-    # ── 1. LinkInfo (most authoritative; updated by drive-letter changers) ──
+    # ── 1. pylnk3 composite path (Unicode ID list — no encoding issues) ──────
+    path_attr = getattr(lnk, "path", None)
+    if path_attr:
+        candidates.append(path_attr)
+
+    # ── 2. LinkInfo (ANSI field; encoding-corrected; may have updated drive
+    #       letter after a remapping tool ran) ─────────────────────────────────
     link_info = getattr(lnk, "link_info", None)
     if link_info is not None:
         for attr in ("local_base_path", "common_path_suffix"):
             val = getattr(link_info, attr, None)
             if val:
-                candidates.append(val)
-
-    # ── 2. pylnk3 composite path (prefers ID list — may be stale after a
-    #       drive-letter change, so we try it only after link_info) ──────────
-    path_attr = getattr(lnk, "path", None)
-    if path_attr:
-        candidates.append(path_attr)
+                candidates.append(_fix_ansi_encoding(val))
 
     # ── 3. Shell item ID list directly (covers KNOWN_FOLDER / %ROOT% forms,
     #       and shortcuts that have no link_info at all) ─────────────────────
