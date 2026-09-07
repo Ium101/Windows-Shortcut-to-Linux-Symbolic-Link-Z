@@ -1,11 +1,11 @@
 <div align="center">
 
-# Lnk2SymLnk
+# Lnk2SymLink Z
 
 **Converts Windows `.lnk` shortcut files into Linux symbolic links**  
 Clean dark PyQt6 GUI · Bilingual EN/PT-BR · CLI fallback · Dry-run mode
 
-[🇧🇷 Português Brasileiro](#lnk2symlnk-pt-br)
+[🇧🇷 Português Brasileiro](#lnk2symlink-pt-br)
 
 </div>
 
@@ -14,7 +14,7 @@ Clean dark PyQt6 GUI · Bilingual EN/PT-BR · CLI fallback · Dry-run mode
 ## How it works
 
 Windows stores shortcuts as binary `.lnk` files that Linux simply ignores.
-Lnk2SymLnk reads each file, extracts the target path, maps the Windows drive
+Lnk2SymLink Z reads each file, extracts the target path, maps the Windows drive
 letter to its Linux mount point, and creates a native symlink in place of the
 `.lnk` file — so your file manager, shell, and every other tool on Linux can
 follow them normally.
@@ -53,7 +53,7 @@ GTK3 bindings are **not** required; the GUI is pure PyQt6.
 ### Run without Installing
 
 ```bash
-python3 lnk2symlink.py
+python3 Lnk2SymLink Z.py
 ```
 
 Dependencies (`PyQt6`, `pylnk3`) are fetched automatically on the first run if
@@ -79,9 +79,9 @@ still writes those files to your home directory, not root's.
 |---|---|
 | `/opt/wsl-symlink/` | Program files |
 | `/usr/local/bin/wsl-symlink` | Launcher in `$PATH` |
-| `~/.local/share/applications/Lnk2SymLnk.desktop` | App menu entry (KDE, GNOME, …) |
-| `~/.local/share/icons/lnk2symlnk.svg` | Icon |
-| `lnk2symlnk_config_linux.ini` | Settings (created next to the script on first run) |
+| `~/.local/share/applications/Lnk2SymLink Z.desktop` | App menu entry (KDE, GNOME, …) |
+| `~/.local/share/icons/lnk2symlink_z.svg` | Icon |
+| `lnk2symlink_z_config_linux.ini` | Settings (created next to the script on first run) |
 
 The build finishes with a self-check that confirms the files landed and the
 Python source is syntactically valid before declaring success.
@@ -91,7 +91,7 @@ Python source is syntactically valid before declaring success.
 ## CLI Usage
 
 ```
-python3 lnk2symlink.py --no-gui [DIR]
+python3 Lnk2SymLink Z.py --no-gui [DIR]
   --dry-run / -n       Preview only, no symlinks created
   --mount LETTER:PATH  Map a drive letter, e.g. -m X:/mnt/disk1
   --no-recurse         Scan top-level folder only
@@ -103,7 +103,7 @@ python3 lnk2symlink.py --no-gui [DIR]
 
 ## Settings File
 
-Settings are saved next to the script as `lnk2symlnk_config_linux.ini`
+Settings are saved next to the script as `lnk2symlink_z_config_linux.ini`
 (or `_windows.ini` on Windows), so the program is fully portable — move
 the folder and your preferences travel with it.
 
@@ -127,10 +127,10 @@ automatically and migrated to `.ini` on the next save.
 ## Project Layout
 
 ```
-lnk2symlink.py              Main script (GUI + CLI in one file)
-build.sh                    Builds the launcher and installs desktop integration
-Lnk2SymLnk                 Generated launcher (created by build.sh)
-lnk2symlnk_config_linux.ini Settings (created on first run)
+Lnk2SymLink Z.py               Main script (GUI + CLI in one file)
+build.sh                       Builds the launcher and installs desktop integration
+Lnk2SymLink                    Generated launcher (created by build.sh)
+lnk2symlink_config_linux.ini   Settings (created on first run)
 ```
 
 ---
@@ -146,12 +146,12 @@ Made by **Ium101**
 
 <div align="center">
 
-# Lnk2SymLnk <a name="lnk2symlnk-pt-br"></a>
+# Lnk2SymLink Z <a name="lnk2symlnk-z-pt-br"></a>
 
 **Converte arquivos de atalho `.lnk` do Windows em links simbólicos do Linux**  
 Interface escura em PyQt6 · Bilíngue EN/PT-BR · Modo CLI · Simulação (dry-run)
 
-[🇺🇸 English](#lnk2symlnk)
+[🇺🇸 English](#lnk2symlink-z)
 
 </div>
 
@@ -160,7 +160,7 @@ Interface escura em PyQt6 · Bilíngue EN/PT-BR · Modo CLI · Simulação (dry-
 ## Como funciona
 
 O Windows armazena atalhos como arquivos binários `.lnk` que o Linux simplesmente ignora.
-O Lnk2SymLnk lê cada arquivo, extrai o caminho de destino, mapeia a letra de unidade
+O Lnk2SymLink Z lê cada arquivo, extrai o caminho de destino, mapeia a letra de unidade
 do Windows para seu ponto de montagem no Linux e cria um link simbólico nativo no lugar
 do arquivo `.lnk` — para que seu gerenciador de arquivos, terminal e qualquer outra
 ferramenta no Linux possam seguí-los normalmente.
@@ -199,7 +199,7 @@ As ligações GTK3 **não** são necessárias; a interface é puramente PyQt6.
 ### Executar sem Instalar
 
 ```bash
-python3 lnk2symlink.py
+python3 Lnk2SymLink Z.py
 ```
 
 As dependências (`PyQt6`, `pylnk3`) são obtidas automaticamente na primeira execução,
@@ -225,9 +225,9 @@ ainda assim grava esses arquivos no seu diretório home, não no do root.
 |---|---|
 | `/opt/wsl-symlink/` | Arquivos do programa |
 | `/usr/local/bin/wsl-symlink` | Launcher no `$PATH` |
-| `~/.local/share/applications/Lnk2SymLnk.desktop` | Entrada no menu de aplicativos (KDE, GNOME, …) |
-| `~/.local/share/icons/lnk2symlnk.svg` | Ícone |
-| `lnk2symlnk_config_linux.ini` | Configurações (criado ao lado do script na primeira execução) |
+| `~/.local/share/applications/Lnk2SymLink Z.desktop` | Entrada no menu de aplicativos (KDE, GNOME, …) |
+| `~/.local/share/icons/lnk2symlink_z.svg` | Ícone |
+| `lnk2symlink_z_config_linux.ini` | Configurações (criado ao lado do script na primeira execução) |
 
 O build termina com uma verificação automática que confirma que os arquivos foram criados
 corretamente e que o código Python é sintaticamente válido, antes de declarar sucesso.
@@ -237,7 +237,7 @@ corretamente e que o código Python é sintaticamente válido, antes de declarar
 ## Uso pela CLI
 
 ```
-python3 lnk2symlink.py --no-gui [DIR]
+python3 Lnk2SymLink Z.py --no-gui [DIR]
   --dry-run / -n       Apenas pré-visualização, nenhum link simbólico criado
   --mount LETRA:CAMINHO  Mapeia uma letra de unidade, ex.: -m X:/mnt/disco1
   --no-recurse         Varre apenas a pasta raiz, sem subpastas
@@ -249,7 +249,7 @@ python3 lnk2symlink.py --no-gui [DIR]
 
 ## Arquivo de Configurações
 
-As configurações são salvas ao lado do script como `lnk2symlnk_config_linux.ini`
+As configurações são salvas ao lado do script como `lnk2symlink_config_linux.ini`
 (ou `_windows.ini` no Windows), tornando o programa totalmente portátil — mova
 a pasta e suas preferências vão junto.
 
@@ -273,10 +273,10 @@ ele é lido automaticamente e migrado para `.ini` no próximo salvamento.
 ## Estrutura do Projeto
 
 ```
-lnk2symlink.py              Script principal (GUI + CLI em um único arquivo)
-build.sh                    Constrói o launcher e instala a integração ao desktop
-Lnk2SymLnk                 Launcher gerado (criado pelo build.sh)
-lnk2symlnk_config_linux.ini Configurações (criado na primeira execução)
+Lnk2symLink Z.py             Script principal (GUI + CLI em um único arquivo)
+build.sh                     Constrói o launcher e instala a integração ao desktop
+Lnk2SymLink Z                Launcher gerado (criado pelo build.sh)
+lnk2symlink_config_linux.ini Configurações (criado na primeira execução)
 ```
 
 ---

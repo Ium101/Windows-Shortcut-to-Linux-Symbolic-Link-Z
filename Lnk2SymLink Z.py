@@ -122,10 +122,10 @@ def T(k, **kw):
 # points, and paths are never compatible between the two OSes.
 _CONFIG_DIR    = Path(__file__).resolve().parent
 _CONFIG_SUFFIX = "windows" if os.name == "nt" else "linux"
-_CONFIG_FILE   = _CONFIG_DIR / f"lnk2symlnk_config_{_CONFIG_SUFFIX}.ini"
+_CONFIG_FILE   = _CONFIG_DIR / f"lnk2symlink_z_config_{_CONFIG_SUFFIX}.ini"
 
 # Legacy JSON path — migrated transparently on first save.
-_CONFIG_FILE_JSON = _CONFIG_DIR / f"lnk2symlnk_config_{_CONFIG_SUFFIX}.json"
+_CONFIG_FILE_JSON = _CONFIG_DIR / f"lnk2symlink_z_config_{_CONFIG_SUFFIX}.json"
 
 _INI_MAIN   = "main"
 _INI_DRIVES = "drive_map"
