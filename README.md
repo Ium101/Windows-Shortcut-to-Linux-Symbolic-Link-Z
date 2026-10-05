@@ -5,8 +5,6 @@
 **Converts Windows `.lnk` shortcut files into Linux symbolic links**  
 Clean dark PyQt6 GUI · Bilingual EN/PT-BR · CLI fallback · Dry-run mode
 
-[🇧🇷 Português Brasileiro](#lnk2symlink-pt-br)
-
 </div>
 
 ---
@@ -132,8 +130,6 @@ Made by **Ium101**
 
 **Converte arquivos de atalho `.lnk` do Windows em links simbólicos do Linux**  
 Interface escura em PyQt6 · Bilíngue EN/PT-BR · Modo CLI · Simulação (dry-run)
-
-[🇺🇸 English](#lnk2symlink-z)
 
 </div>
 
