@@ -101,24 +101,6 @@ python3 Lnk2SymLink Z.py --no-gui [DIR]
 
 ---
 
-## Settings File
-
-Settings are saved next to the script as `lnk2symlink_z_config_linux.ini`
-(or `_windows.ini` on Windows), so the program is fully portable — move
-the folder and your preferences travel with it.
-
-```ini
-[main]
-last_folder = /mnt/sda1/Users/Casa/Links
-lang = en
-recursive = true
-
-[drive_map]
-x = /mnt/Disco_Local1
-y = /run/media/x/Seagate1
-z = /mnt/Disco_Local
-```
-
 If a legacy `.json` config exists from an older version it is read
 automatically and migrated to `.ini` on the next save.
 
@@ -244,29 +226,6 @@ python3 Lnk2SymLink Z.py --no-gui [DIR]
   --lang pt            Saída em português
   --help               Todas as opções
 ```
-
----
-
-## Arquivo de Configurações
-
-As configurações são salvas ao lado do script como `lnk2symlink_config_linux.ini`
-(ou `_windows.ini` no Windows), tornando o programa totalmente portátil — mova
-a pasta e suas preferências vão junto.
-
-```ini
-[main]
-last_folder = /mnt/sda1/Users/Casa/Links
-lang = pt
-recursive = true
-
-[drive_map]
-x = /mnt/Disco_Local1
-y = /run/media/x/Seagate1
-z = /mnt/Disco_Local
-```
-
-Se existir um arquivo de configuração legado em `.json` de uma versão anterior,
-ele é lido automaticamente e migrado para `.ini` no próximo salvamento.
 
 ---
 
