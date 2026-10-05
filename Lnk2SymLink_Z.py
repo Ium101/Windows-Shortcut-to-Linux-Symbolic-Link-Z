@@ -129,26 +129,49 @@ _CONFIG_FILE_JSON = _CONFIG_DIR / f"lnk2symlink_z_config_{_CONFIG_SUFFIX}.json"
 
 _INI_MAIN   = "main"
 _INI_DRIVES = "drive_map"
+_INI_RECENT = "recent"      # [recent] 1 = newest path, 2 = next, ...
+_MAX_RECENT = 10            # how many recent folder/file selections to remember
+_INI_UNCHECKED = "unchecked"   # [unchecked] 1 = full path of a .lnk the user left unticked
+_MAX_UNCHECKED = 1000          # cap so the list can't grow forever
+
+def _norm_path(p: str) -> str:
+    """Normalise a user-typed/picked path so duplicates compare equal
+    (no symlink resolving — we keep exactly what the user chose)."""
+    p = (p or "").strip()
+    return os.path.normpath(os.path.expanduser(p)) if p else ""
 
 def load_config() -> dict:
     # ── 1. Try INI first ──────────────────────────────────────
     if _CONFIG_FILE.exists():
         try:
-            cp = configparser.ConfigParser()
+            cp = configparser.ConfigParser(interpolation=None)
             cp.read(_CONFIG_FILE, encoding="utf-8")
             result: dict = {}
             if cp.has_option(_INI_MAIN, "last_folder"):
+                # Legacy key — no longer written; only used to seed [recent] once.
                 result["last_folder"] = cp.get(_INI_MAIN, "last_folder")
             if cp.has_option(_INI_MAIN, "lang"):
                 result["lang"] = cp.get(_INI_MAIN, "lang")
             if cp.has_option(_INI_MAIN, "recursive"):
                 result["recursive"] = cp.getboolean(_INI_MAIN, "recursive")
-            if cp.has_option(_INI_MAIN, "dark_mode"):
+            if cp.has_option(_INI_MAIN, "dry_run"):
+                result["dry_run"] = cp.getboolean(_INI_MAIN, "dry_run")
+            if cp.has_option(_INI_MAIN, "mode"):
+                result["dark_mode"] = cp.get(_INI_MAIN, "mode").strip().lower() != "light"
+            elif cp.has_option(_INI_MAIN, "dark_mode"):          # legacy key
                 result["dark_mode"] = cp.getboolean(_INI_MAIN, "dark_mode")
             if cp.has_section(_INI_DRIVES):
                 # configparser lowercases all keys; drive letters must be
                 # uppercase to match e.drive_letter (always .upper() at parse time).
                 result["drive_map"] = {k.upper(): v for k, v in cp.items(_INI_DRIVES)}
+            if cp.has_section(_INI_UNCHECKED):
+                items = sorted(cp.items(_INI_UNCHECKED),
+                               key=lambda kv: int(kv[0]) if kv[0].isdigit() else 10**9)
+                result["unchecked_lnks"] = [v for _, v in items if v.strip()]
+            if cp.has_section(_INI_RECENT):
+                items = sorted(cp.items(_INI_RECENT),
+                               key=lambda kv: int(kv[0]) if kv[0].isdigit() else 10**9)
+                result["recent_folders"] = [v for _, v in items if v.strip()]
             return result
         except Exception:
             pass
@@ -167,19 +190,25 @@ def load_config() -> dict:
 
 def save_config(data: dict):
     try:
-        cp = configparser.ConfigParser()
+        cp = configparser.ConfigParser(interpolation=None)
         cp[_INI_MAIN] = {}
-        if "last_folder" in data:
-            cp[_INI_MAIN]["last_folder"] = str(data["last_folder"])
         if "lang" in data:
             cp[_INI_MAIN]["lang"] = str(data["lang"])
         if "recursive" in data:
             cp[_INI_MAIN]["recursive"] = "true" if data["recursive"] else "false"
+        if "dry_run" in data:
+            cp[_INI_MAIN]["dry_run"] = "true" if data["dry_run"] else "false"
         if "dark_mode" in data:
-            cp[_INI_MAIN]["dark_mode"] = "true" if data["dark_mode"] else "false"
+            cp[_INI_MAIN]["mode"] = "dark" if data["dark_mode"] else "light"
         drive_map = data.get("drive_map", {})
         if drive_map:
             cp[_INI_DRIVES] = {k: str(v) for k, v in drive_map.items()}
+        unchecked = [str(p) for p in data.get("unchecked_lnks", []) if str(p).strip()]
+        if unchecked:
+            cp[_INI_UNCHECKED] = {str(i): p for i, p in enumerate(unchecked[-_MAX_UNCHECKED:], 1)}
+        recent = [str(p) for p in data.get("recent_folders", []) if str(p).strip()]
+        if recent:
+            cp[_INI_RECENT] = {str(i): p for i, p in enumerate(recent[:_MAX_RECENT], 1)}
         tmp = _CONFIG_FILE.with_suffix(".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             cp.write(f)
@@ -538,6 +567,11 @@ def _is_kde() -> bool:
     return "kde" in desk or "plasma" in desk
 
 
+# Thumbnails of folder contents can make the picker very slow in big folders
+# (e.g. ComfyUI output dirs).  Set to False to keep the icon grid but skip previews.
+_PICKER_PREVIEWS = True
+
+
 def _set_kfilewidget_icon_view():
     """
     Write the correct KDE config keys so kdialog opens KFileWidget in
@@ -562,7 +596,7 @@ def _set_kfilewidget_icon_view():
         # Desired keys in [KFileWidget]
         wanted = {
             "View Style":    "Simple",
-            "Show Previews": "true",
+            "Show Previews": "true" if _PICKER_PREVIEWS else "false",
             "Preview Size":  "128",
         }
 
@@ -611,9 +645,86 @@ def _set_kfilewidget_icon_view():
                 out_lines.append(f"[{sec}]")
                 out_lines.extend(sections[sec])
 
-        cfg_path.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+        new_text = "\n".join(out_lines) + "\n"
+        old_text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+        # Rewriting kdeglobals — even with identical content — bumps its mtime and
+        # makes every running KDE app/plasmashell reload its config, which is a
+        # noticeable stall.  Only write when a value really changed.
+        if new_text != old_text:
+            cfg_path.write_text(new_text, encoding="utf-8")
     except OSError:
         pass   # not fatal — kdialog will still open, just may not be icon view
+
+
+def _run_external(cmd, parent=None, timeout=300):
+    """
+    Run an external dialog program (kdialog, ...) WITHOUT freezing the GUI.
+
+    subprocess.run() blocks the Qt event loop for as long as the dialog is up
+    (and while kdialog is still loading KDE libraries), so the main window stops
+    repainting and the desktop may flag the app as "not responding".  QProcess +
+    a local event loop keeps the window alive.  The parent window is disabled
+    meanwhile so nothing can be clicked/scanned underneath the dialog.
+
+    Returns (returncode, stdout_text).
+    Raises FileNotFoundError if the program does not exist,
+           subprocess.TimeoutExpired on timeout.
+    """
+    from PyQt6.QtCore import QProcess, QEventLoop, QTimer
+
+    proc  = QProcess()
+    loop  = QEventLoop()
+    state = {"missing": False, "timeout": False}
+    proc.setStandardErrorFile(QProcess.nullDevice())
+
+    def _on_error(err):
+        if err == QProcess.ProcessError.FailedToStart:
+            state["missing"] = True
+            loop.quit()
+
+    def _on_timeout():
+        state["timeout"] = True
+        proc.kill()
+        loop.quit()
+
+    proc.finished.connect(lambda *_: loop.quit())
+    proc.errorOccurred.connect(_on_error)
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(_on_timeout)
+
+    win = parent.window() if parent is not None else None
+    if win is not None:
+        win.setEnabled(False)
+    try:
+        timer.start(int(timeout * 1000))
+        proc.start(cmd[0], list(cmd[1:]))
+        # FailedToStart can be reported before we get here — don't wait forever.
+        if not state["missing"] and proc.state() != QProcess.ProcessState.NotRunning:
+            loop.exec()
+        timer.stop()
+    finally:
+        # Detach signals first: a killed process can still emit `finished` after
+        # the local loop is gone, which would call into a deleted QEventLoop.
+        try:
+            proc.finished.disconnect()
+            proc.errorOccurred.disconnect()
+        except TypeError:
+            pass
+        if proc.state() != QProcess.ProcessState.NotRunning:
+            proc.kill()
+            proc.waitForFinished(2000)
+        if win is not None:
+            win.setEnabled(True)
+
+    if state["missing"]:
+        raise FileNotFoundError(cmd[0])
+    if state["timeout"]:
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    if proc.exitStatus() == QProcess.ExitStatus.CrashExit:
+        return -1, ""
+    out = bytes(proc.readAllStandardOutput()).decode("utf-8", "replace")
+    return proc.exitCode(), out
 
 
 def _pick_folder_dolphin(parent_widget, title: str, start_dir: str) -> Optional[str]:
@@ -675,13 +786,12 @@ def _pick_folder_dolphin(parent_widget, title: str, start_dir: str) -> Optional[
     _set_kfilewidget_icon_view()
     for kdialog_bin in ("kdialog", "kdialog6"):
         try:
-            result = subprocess.run(
+            rc, out = _run_external(
                 [kdialog_bin, "--title", title,
                  "--getexistingdirectory", start_uri],
-                capture_output=True, text=True, timeout=300
-            )
-            if result.returncode == 0:
-                chosen = _decode_uri(result.stdout)
+                parent_widget)
+            if rc == 0:
+                chosen = _decode_uri(out)
                 if chosen:
                     return chosen
             # rc=1 = user cancelled — don't open another dialog on top
@@ -779,7 +889,7 @@ def run_gui():
         QTextEdit, QStatusBar, QFrame, QSizePolicy, QFileDialog,
         QMessageBox, QGroupBox, QSplitter
     )
-    from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QDir
+    from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QDir, QTimer
     from PyQt6.QtGui import QFont, QColor, QPalette, QTextCharFormat, QTextCursor, QIcon
     import base64
 
@@ -928,6 +1038,32 @@ def run_gui():
         ACCENT_TEXT= BG               if dark else QColor("#ffffff")
         return BG, BG2, BG3, ACCENT, FG, FG2, LOG_BG, GREEN, RED, YEL, PURPLE, ACCENT_TEXT
 
+    _arrow_dir = [None]
+
+    def _arrow_icon(color: QColor) -> str:
+        """Draw a small down-pointing chevron PNG in `color`; return its path for QSS."""
+        from PyQt6.QtGui import QImage, QPainter, QPen, QPolygonF
+        from PyQt6.QtCore import QPointF
+        import tempfile, atexit, shutil
+        if _arrow_dir[0] is None:
+            _arrow_dir[0] = tempfile.mkdtemp(prefix="lnk2symlink_z_")
+            atexit.register(shutil.rmtree, _arrow_dir[0], True)
+        path = os.path.join(_arrow_dir[0], f"down_{color.name()[1:]}.png")
+        if not os.path.exists(path):
+            img = QImage(24, 24, QImage.Format.Format_ARGB32)
+            img.fill(Qt.GlobalColor.transparent)
+            pt = QPainter(img)
+            pt.setRenderHint(QPainter.RenderHint.Antialiasing)
+            pen = QPen(color)
+            pen.setWidthF(3.4)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            pt.setPen(pen)
+            pt.drawPolyline(QPolygonF([QPointF(5.5, 8.5), QPointF(12, 15.5), QPointF(18.5, 8.5)]))
+            pt.end()
+            img.save(path)
+        return Path(path).as_posix()
+
     def _apply_theme(dark: bool):
         BG, BG2, BG3, ACCENT, FG, FG2, LOG_BG, GREEN, RED, YEL, PURPLE, ACCENT_TEXT = \
             _theme_colors(dark)
@@ -1000,11 +1136,15 @@ def run_gui():
         border-radius: 5px; padding: 5px 8px; font-size: 10pt;
     }}
     QComboBox:focus {{ border: 1px solid {ACCENT.name()}; }}
-    QComboBox::drop-down {{ border: none; width: 20px; }}
-    QComboBox::down-arrow {{ width: 10px; height: 10px; }}
+    QComboBox::drop-down {{
+        subcontrol-origin: padding; subcontrol-position: center right;
+        border: none; width: 24px;
+    }}
+    QComboBox::down-arrow {{ image: url("{_arrow_icon(FG)}"); width: 12px; height: 12px; }}
     QComboBox QAbstractItemView {{
         background: {BG2.name()}; color: {FG.name()};
-        selection-background-color: {BG3.name()}; border: 1px solid {BG3.name()};
+        selection-background-color: {BG3.name()}; selection-color: {FG2.name()};
+        border: 1px solid {BG3.name()};
     }}
     QTextEdit {{
         background: {LOG_BG.name()}; color: {FG.name()}; border: 1px solid {BG3.name()};
@@ -1093,14 +1233,54 @@ def run_gui():
             self.worker     = None
             self._root_path = None
             self._config    = load_config()
+            self._recent    = [_norm_path(p) for p in self._config.get("recent_folders", []) if _norm_path(p)]
+            legacy = _norm_path(self._config.pop("last_folder", ""))   # old configs only
+            if legacy and not self._recent:
+                self._recent = [legacy]
+            self._unchecked = [_norm_path(p) for p in self._config.get("unchecked_lnks", []) if _norm_path(p)]
             self._saved_drive_map = self._config.get("drive_map", {})  # letter -> mount str
             self._build_ui()
             self._restore_last_folder()
+            # Auto-scan recent #1 once the window is on screen (short delay so the
+            # window paints first instead of appearing only after the scan).
+            if self.entry_folder.text().strip():
+                QTimer.singleShot(50, lambda: self._do_scan(silent=True))
 
         def _restore_last_folder(self):
-            last = self._config.get("last_folder", "")
-            if last and Path(last).is_dir():
+            # Recent #1 is the last selection made — restore it at startup.
+            last = self._recent[0] if self._recent else ""
+            if last and os.path.exists(last):
                 self.entry_folder.setText(last)
+            self._refresh_recent()
+
+        # ── Recent selections dropdown ────────────────────────
+        def _refresh_recent(self):
+            """Fill the dropdown with recent selections, excluding the one currently shown."""
+            text    = self.entry_folder.text()
+            current = _norm_path(text)
+            self.combo_folder.blockSignals(True)
+            self.combo_folder.clear()
+            for p in self._recent:
+                if p != current and os.path.exists(p):
+                    self.combo_folder.addItem(p)
+            self.combo_folder.setCurrentIndex(-1)
+            self.combo_folder.setEditText(text)
+            self.combo_folder.blockSignals(False)
+
+        def _remember_selection(self):
+            """Move the current folder/file to the front of the recent list."""
+            p = _norm_path(self.entry_folder.text())
+            if p and os.path.exists(p):
+                self._recent = [p] + [r for r in self._recent if r != p]
+                del self._recent[_MAX_RECENT:]
+            self._config["recent_folders"] = list(self._recent)
+            self._refresh_recent()
+
+        def _on_recent_picked(self, index):
+            path = self.combo_folder.itemText(index)
+            if path:
+                self.entry_folder.setText(path)
+                self._do_scan()   # same behaviour as Browse: scan right away
 
         def _build_ui(self):
             self.setWindowTitle(T("title"))
@@ -1176,10 +1356,18 @@ def run_gui():
             fl = QHBoxLayout()
             self.lbl_folder = QLabel(T("folder_label"))
             fl.addWidget(self.lbl_folder)
-            self.entry_folder = QLineEdit()
+            self.combo_folder = QComboBox()
+            self.combo_folder.setEditable(True)
+            self.combo_folder.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+            self.combo_folder.setCompleter(None)   # no inline autocomplete hijacking typed paths
+            self.combo_folder.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            self.combo_folder.setMinimumContentsLength(20)
+            self.combo_folder.activated.connect(self._on_recent_picked)
+            self.entry_folder = self.combo_folder.lineEdit()   # same QLineEdit API as before
             self.entry_folder.setPlaceholderText("/home/user/myfolder")
             self.entry_folder.returnPressed.connect(self._do_scan)
-            fl.addWidget(self.entry_folder, 1)
+            fl.addWidget(self.combo_folder, 1)
             self.btn_scan = QPushButton(T("scan"))
             self.btn_scan.setObjectName("accent")
             self.btn_scan.setToolTip("Scan the path typed above")
@@ -1196,6 +1384,7 @@ def run_gui():
             # Recursive scan toggle
             self.chk_recursive = QCheckBox(T("recursive"))
             self.chk_recursive.setChecked(self._config.get("recursive", True))
+            self.chk_recursive.toggled.connect(self._save_options)   # remember on every toggle
             vl.addWidget(self.chk_recursive)
 
             # Tree — 6 columns: ✓ / Shortcut / Path / Windows Target / Drive / Status
@@ -1244,6 +1433,8 @@ def run_gui():
             # Bottom bar
             bl = QHBoxLayout()
             self.chk_dry = QCheckBox(T("dry"))
+            self.chk_dry.setChecked(self._config.get("dry_run", False))
+            self.chk_dry.toggled.connect(self._save_options)         # remember on every toggle
             bl.addWidget(self.chk_dry)
             bl.addStretch()
             self.btn_convert = QPushButton(T("convert"))
@@ -1341,14 +1532,13 @@ def run_gui():
             for kdialog_bin in ("kdialog", "kdialog6"):
                 try:
                     _set_kfilewidget_icon_view()
-                    result = subprocess.run(
+                    rc, out = _run_external(
                         [kdialog_bin, "--title", T("browse_file"),
                          "--getopenfilename", start_uri, "*.lnk"],
-                        capture_output=True, text=True, timeout=300
-                    )
+                        self)
                     kdialog_ran = True
-                    if result.returncode == 0:
-                        raw = result.stdout.strip()
+                    if rc == 0:
+                        raw = out.strip()
                         if raw.startswith("file://"):
                             from urllib.parse import unquote
                             raw = unquote(raw[7:])
@@ -1436,18 +1626,34 @@ def run_gui():
                 val = combo.lineEdit().text().strip()
                 if val:
                     self._saved_drive_map[letter.upper()] = val
-            self._config["last_folder"] = self.entry_folder.text().strip()
+            self._remember_selection()   # updates self._config["recent_folders"]
             self._config["drive_map"]   = dict(self._saved_drive_map)
             self._config["lang"]        = _LANG
             self._config["recursive"]   = self.chk_recursive.isChecked()
+            self._config["dry_run"]     = self.chk_dry.isChecked()
+            self._config["dark_mode"]   = _dark_mode_state[0]
             save_config(self._config)
 
-        def _do_scan(self):
+        def _save_options(self, *_):
+            """Persist the checkbox states right away (checked AND unchecked)."""
+            self._config["recursive"] = self.chk_recursive.isChecked()
+            self._config["dry_run"]   = self.chk_dry.isChecked()
+            self._config["dark_mode"] = _dark_mode_state[0]
+            save_config(self._config)
+
+        def _do_scan(self, *_, silent=False):
+            # silent=True is used for the automatic startup scan: no popups.
             path_str = self.entry_folder.text().strip()
             if not path_str:
-                QMessageBox.warning(self, T("title"), T("no_folder")); return
+                if not silent:
+                    QMessageBox.warning(self, T("title"), T("no_folder"))
+                return
             if not _HAVE_PYLNK3:
-                QMessageBox.critical(self, T("title"), T("no_pylnk3")); return
+                if not silent:
+                    QMessageBox.critical(self, T("title"), T("no_pylnk3"))
+                else:
+                    self.status.showMessage(T("no_pylnk3").splitlines()[0])
+                return
 
             p = Path(path_str)
             self.status.showMessage(T("scanning"))
@@ -1483,7 +1689,8 @@ def run_gui():
 
             if not self.entries:
                 self.status.showMessage(T("no_lnk"))
-                QMessageBox.information(self, T("title"), T("no_lnk"))
+                if not silent:
+                    QMessageBox.information(self, T("title"), T("no_lnk"))
             else:
                 self.status.showMessage(T("ready"))
 
@@ -1509,7 +1716,11 @@ def run_gui():
                 stat
             ])
             # Checkbox in column 0 — checked by default, unchecked for error entries
-            check_state = Qt.CheckState.Unchecked if e.error else Qt.CheckState.Checked
+            # (or unchecked because the user left it unticked at the last Convert)
+            item.setData(0, Qt.ItemDataRole.UserRole, str(e.lnk_path))   # full path = row identity
+            left_unticked = _norm_path(str(e.lnk_path)) in self._unchecked
+            check_state = (Qt.CheckState.Unchecked if (e.error or left_unticked)
+                           else Qt.CheckState.Checked)
             item.setCheckState(0, check_state)
             if e.error:
                 _RED = _C()[8]
@@ -1548,17 +1759,33 @@ def run_gui():
                 if val:
                     drive_map[letter] = Path(val)
 
-            self._save_current_config()   # remember drive mappings for next launch
-
-            # Build a set of checked lnk paths so we only convert selected rows
-            checked_paths = set()
+            # Read the row checkboxes (rows are identified by full .lnk path, so two
+            # shortcuts with the same name in different sub-folders stay independent).
+            checked_paths, unticked_now, seen_now = set(), set(), set()
+            errored = {str(e.lnk_path) for e in self.entries if e.error}
             for i in range(self.tree.topLevelItemCount()):
                 it = self.tree.topLevelItem(i)
+                full = it.data(0, Qt.ItemDataRole.UserRole)
+                if not full:
+                    continue
                 if it.checkState(0) == Qt.CheckState.Checked:
-                    # Column 1 holds the filename; match against entry lnk_path.name
-                    checked_paths.add(it.text(1))
+                    checked_paths.add(full)
+                if full in errored:
+                    continue          # unchecked only because of an error — not the user's choice
+                seen_now.add(_norm_path(full))
+                if it.checkState(0) != Qt.CheckState.Checked:
+                    unticked_now.add(_norm_path(full))
 
-            selected_entries = [e for e in self.entries if e.lnk_path.name in checked_paths]
+            # Remember the unticked rows for next time: rows from this scan are
+            # replaced by their current state, entries from other folders are kept.
+            kept = [p for p in self._unchecked if p not in seen_now]
+            self._unchecked = kept + sorted(unticked_now)
+            del self._unchecked[:-_MAX_UNCHECKED]
+            self._config["unchecked_lnks"] = list(self._unchecked)
+
+            self._save_current_config()   # drive mappings + unticked rows for next launch
+
+            selected_entries = [e for e in self.entries if str(e.lnk_path) in checked_paths]
             if not selected_entries:
                 QMessageBox.warning(self, T("title"), T("no_lnk")); return
 

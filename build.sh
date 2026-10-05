@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────
-#  build.sh  —  Installs deps and creates shortcuts for "Lnk2SymLink Z.py"
+#  build.sh  —  Installs deps and creates shortcuts for "Lnk2SymLink_Z.py"
 #  Run:    chmod +x build.sh && ./build.sh
 # ─────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -14,10 +14,10 @@ echo " =========================================="
 echo
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MAIN="$SCRIPT_DIR/Lnk2SymLink Z.py"
+MAIN="$SCRIPT_DIR/Lnk2SymLink_Z.py"
 
 if [[ ! -f "$MAIN" ]]; then
-    echo " ERROR: Lnk2SymLink Z.py not found in $SCRIPT_DIR" >&2
+    echo " ERROR: Lnk2SymLink_Z.py not found in $SCRIPT_DIR" >&2
     exit 1
 fi
 
@@ -52,7 +52,7 @@ if ! "$PYTHON" -m pip install --quiet --upgrade pylnk3 PyQt6 2>/dev/null; then
 fi
 echo " OK   Dependencies installed."
 
-# ── Make "Lnk2SymLink Z.py" directly executable ───────────────────
+# ── Make "Lnk2SymLink_Z.py" directly executable ───────────────────
 chmod +x "$MAIN"
 echo " OK   $MAIN is now executable."
 
@@ -99,16 +99,16 @@ cat > "$ICON_FILE" << 'SVGEOF'
 SVGEOF
 # NOTE: this is a flat install into ~/.local/share/icons/ rather than the
 # hicolor theme path (~/.local/share/icons/hicolor/scalable/apps/). Bare-name
-# Icon= lookups (e.g. Icon=lnk2symlink z with no path) rely on icon-theme search
+# Icon= lookups (e.g. Icon=lnk2symlink_z with no path) rely on icon-theme search
 # rules and may NOT find a flat file here on every desktop environment, so
 # both .desktop entries below use the full path to "$ICON_FILE" to guarantee
 # the icon shows up regardless of theme lookup behavior.
 
 # ── System menu .desktop ───────────────────────────────────────────
 echo " Adding to system menu..."
-cat > "$APP_DIR/Lnk2SymLink Z.desktop" << DESKTOPEOF
+cat > "$APP_DIR/Lnk2SymLink_Z.desktop" << DESKTOPEOF
 [Desktop Entry]
-Name=Lnk2SymLink
+Name=Lnk2SymLink Z
 Comment=Convert Windows .lnk shortcuts to Linux symlinks
 Exec="$MAIN"
 Icon=$ICON_FILE
@@ -116,17 +116,17 @@ Terminal=false
 Type=Application
 Categories=Utility;
 DESKTOPEOF
-chmod +x "$APP_DIR/Lnk2SymLink Z.desktop"
+chmod +x "$APP_DIR/Lnk2SymLink_Z.desktop"
 
 if command -v update-desktop-database &>/dev/null; then
-    update-desktop-database "$APP_DIR" &>/dev/null
+    update-desktop-database "$APP_DIR" &>/dev/null || true
 fi
 
 # ── Desktop shortcut ────────────────────────────────────────────────
 echo " Creating desktop shortcut..."
-cat > "$DESKTOP_DIR/Lnk2SymLink.desktop" << DESKTOPEOF
+cat > "$DESKTOP_DIR/Lnk2SymLink_Z.desktop" << DESKTOPEOF
 [Desktop Entry]
-Name=Lnk2SymLink
+Name=Lnk2SymLink Z
 Comment=Convert Windows .lnk shortcuts to Linux symlinks
 Exec="$MAIN"
 Icon=$ICON_FILE
@@ -134,18 +134,18 @@ Terminal=false
 Type=Application
 Categories=Utility;
 DESKTOPEOF
-chmod 755 "$DESKTOP_DIR/Lnk2SymLink Z.desktop"
+chmod 755 "$DESKTOP_DIR/Lnk2SymLink_Z.desktop"
 
 if command -v gio &>/dev/null; then
-    gio set "$DESKTOP_DIR/Lnk2SymLink.desktop" metadata::trusted true 2>/dev/null
+    gio set "$DESKTOP_DIR/Lnk2SymLink_Z.desktop" metadata::trusted true 2>/dev/null || true
 fi
 
 # ── KDE menu cache ───────────────────────────────────────────────
 echo " Refreshing menu cache..."
 if command -v kbuildsycoca6 &>/dev/null; then
-    kbuildsycoca6 &>/dev/null
+    kbuildsycoca6 &>/dev/null || true
 elif command -v kbuildsycoca5 &>/dev/null; then
-    kbuildsycoca5 &>/dev/null
+    kbuildsycoca5 &>/dev/null || true
 fi
 
 echo
@@ -154,13 +154,13 @@ echo "  Build complete!"
 echo " =========================================="
 echo
 echo "  Script:   $MAIN"
-echo "  Menu:     $APP_DIR/Lnk2SymLink Z.desktop"
-echo "  Desktop:  $DESKTOP_DIR/Lnk2SymLink Z.desktop"
-echo "  Settings: $SCRIPT_DIR/Lnk2SymLink_Z_config_linux.ini  (created on first run)"
+echo "  Menu:     $APP_DIR/Lnk2SymLink_Z.desktop"
+echo "  Desktop:  $DESKTOP_DIR/Lnk2SymLink_Z.desktop"
+echo "  Settings: $SCRIPT_DIR/lnk2symlink_z_config_linux.ini  (created on first run)"
 echo
 echo " To run:"
-echo "    ./\"Lnk2SymLink Z.py\"                      # open GUI"
-echo "    ./\"Lnk2SymLink Z.py\" --no-gui [DIR]       # CLI mode"
-echo "    ./\"Lnk2SymLink Z.py\" --lang pt            # Portuguese UI"
-echo "    ./\"Lnk2SymLink Z.py\" --help               # all options"
+echo "    ./\"Lnk2SymLink_Z.py\"                      # open GUI"
+echo "    ./\"Lnk2SymLink_Z.py\" --no-gui [DIR]       # CLI mode"
+echo "    ./\"Lnk2SymLink_Z.py\" --lang pt            # Portuguese UI"
+echo "    ./\"Lnk2SymLink_Z.py\" --help               # all options"
 echo
