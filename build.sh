@@ -106,7 +106,7 @@ SVGEOF
 
 # ── System menu .desktop ───────────────────────────────────────────
 echo " Adding to system menu..."
-cat > "$APP_DIR/Lnk2SymLink_Z.desktop" << DESKTOPEOF
+cat > "$APP_DIR/Lnk2SymLinkZ.desktop" << DESKTOPEOF
 [Desktop Entry]
 Name=Lnk2SymLink Z
 Comment=Convert Windows .lnk shortcuts to Linux symlinks
@@ -116,7 +116,7 @@ Terminal=false
 Type=Application
 Categories=Utility;
 DESKTOPEOF
-chmod +x "$APP_DIR/Lnk2SymLink_Z.desktop"
+chmod +x "$APP_DIR/Lnk2SymLinkZ.desktop"
 
 if command -v update-desktop-database &>/dev/null; then
     update-desktop-database "$APP_DIR" &>/dev/null || true
@@ -124,7 +124,7 @@ fi
 
 # ── Desktop shortcut ────────────────────────────────────────────────
 echo " Creating desktop shortcut..."
-cat > "$DESKTOP_DIR/Lnk2SymLink_Z.desktop" << DESKTOPEOF
+cat > "$DESKTOP_DIR/Lnk2SymLinkZ.desktop" << DESKTOPEOF
 [Desktop Entry]
 Name=Lnk2SymLink Z
 Comment=Convert Windows .lnk shortcuts to Linux symlinks
@@ -134,10 +134,10 @@ Terminal=false
 Type=Application
 Categories=Utility;
 DESKTOPEOF
-chmod 755 "$DESKTOP_DIR/Lnk2SymLink_Z.desktop"
+chmod 755 "$DESKTOP_DIR/Lnk2SymLinkZ.desktop"
 
 if command -v gio &>/dev/null; then
-    gio set "$DESKTOP_DIR/Lnk2SymLink_Z.desktop" metadata::trusted true 2>/dev/null || true
+    gio set "$DESKTOP_DIR/Lnk2SymLinkZ.desktop" metadata::trusted true 2>/dev/null || true
 fi
 
 # ── KDE menu cache ───────────────────────────────────────────────
@@ -154,8 +154,8 @@ echo "  Build complete!"
 echo " =========================================="
 echo
 echo "  Script:   $MAIN"
-echo "  Menu:     $APP_DIR/Lnk2SymLink_Z.desktop"
-echo "  Desktop:  $DESKTOP_DIR/Lnk2SymLink_Z.desktop"
+echo "  Menu:     $APP_DIR/Lnk2SymLinkZ.desktop"
+echo "  Desktop:  $DESKTOP_DIR/Lnk2SymLinkZ.desktop"
 echo "  Settings: $SCRIPT_DIR/lnk2symlink_z_config_linux.ini  (created on first run)"
 echo
 echo " To run:"
