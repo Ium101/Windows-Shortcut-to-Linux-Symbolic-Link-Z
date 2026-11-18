@@ -80,6 +80,9 @@ _S = {
     log_dry="[DRY RUN] Would create: {lnk}  →  {tgt}",
     select_all="Select All", deselect_all="Deselect All",
     col_sel="✓",
+    clear_recent="✕  Clear list",
+    clear_recent_confirm="Clear the list of recently used folders / files?",
+    recent_cleared="Recent list cleared.",
 ),
 "pt": dict(
     title="Windows Shortcut to Linux Symbolic Link Z", credit="Feito por Ium101",
@@ -108,6 +111,9 @@ _S = {
     log_dry="[SIMULAÇÃO] Criaria: {lnk}  →  {tgt}",
     select_all="Selecionar Todos", deselect_all="Desmarcar Todos",
     col_sel="✓",
+    clear_recent="✕  Limpar lista",
+    clear_recent_confirm="Limpar a lista de pastas / arquivos usados recentemente?",
+    recent_cleared="Lista de recentes limpa.",
 ),
 }
 _LANG = "en"
@@ -1239,6 +1245,8 @@ def run_gui():
                 self._recent = [legacy]
             self._unchecked = [_norm_path(p) for p in self._config.get("unchecked_lnks", []) if _norm_path(p)]
             self._saved_drive_map = self._config.get("drive_map", {})  # letter -> mount str
+            self._entry_text_backup = ""      # last real text in the folder box (never the "Clear list" label)
+            self._clear_item_text   = ""
             self._build_ui()
             self._restore_last_folder()
             # Auto-scan recent #1 once the window is on screen (short delay so the
@@ -1263,6 +1271,13 @@ def run_gui():
             for p in self._recent:
                 if p != current and os.path.exists(p):
                     self.combo_folder.addItem(p)
+            # "Clear list" entry at the bottom (only when there is something to clear)
+            self._clear_item_text = T("clear_recent")
+            if self.combo_folder.count() > 0:
+                self.combo_folder.insertSeparator(self.combo_folder.count())
+                self.combo_folder.addItem(self._clear_item_text)
+                self.combo_folder.setItemData(
+                    self.combo_folder.count() - 1, "clear", Qt.ItemDataRole.UserRole)
             self.combo_folder.setCurrentIndex(-1)
             self.combo_folder.setEditText(text)
             self.combo_folder.blockSignals(False)
@@ -1276,7 +1291,34 @@ def run_gui():
             self._config["recent_folders"] = list(self._recent)
             self._refresh_recent()
 
+        def _on_entry_text_changed(self, text):
+            # Remember what is really in the box, so picking "Clear list"
+            # (which Qt writes into the line edit) can be undone.
+            if text != self._clear_item_text:
+                self._entry_text_backup = text
+
+        def _clear_recent(self):
+            """Forget all recent folders/files (memory + .ini file)."""
+            keep = self._entry_text_backup
+            self.entry_folder.setText(keep)      # undo Qt copying "Clear list" into the box
+            answer = QMessageBox.question(
+                self, T("title"), T("clear_recent_confirm"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                self._refresh_recent()
+                return
+            self._recent = []
+            self._config["recent_folders"] = []
+            self._config.pop("last_folder", None)
+            save_config(self._config)
+            self._refresh_recent()
+            self.status.showMessage(T("recent_cleared"))
+
         def _on_recent_picked(self, index):
+            if self.combo_folder.itemData(index, Qt.ItemDataRole.UserRole) == "clear":
+                self._clear_recent()
+                return
             path = self.combo_folder.itemText(index)
             if path:
                 self.entry_folder.setText(path)
@@ -1366,6 +1408,7 @@ def run_gui():
             self.combo_folder.activated.connect(self._on_recent_picked)
             self.entry_folder = self.combo_folder.lineEdit()   # same QLineEdit API as before
             self.entry_folder.setPlaceholderText("/home/user/myfolder")
+            self.entry_folder.textChanged.connect(self._on_entry_text_changed)
             self.entry_folder.returnPressed.connect(self._do_scan)
             fl.addWidget(self.combo_folder, 1)
             self.btn_scan = QPushButton(T("scan"))
@@ -1502,6 +1545,7 @@ def run_gui():
             self.btn_theme.setText(T("theme_dark" if dark else "theme_light"))
             self.btn_select_all.setText(T("select_all"))
             self.btn_deselect_all.setText(T("deselect_all"))
+            self._refresh_recent()      # "Clear list" label follows the language
             # Retranslate drive row labels
             letters = sorted(self.drive_rows.keys())
             self._rebuild_drive_rows(letters)
